@@ -37,7 +37,7 @@ const float Y_DAMPER = 0.00008;
 const float MAX_VELOCITY = 0.2;
 
 
-class PhysicsObject{
+class PhysicsObject {
 private:
 	vec2 pos;
 	vec2 velocity;
@@ -47,7 +47,7 @@ private:
 	float deceleration;
 
 	float mass;
-	
+
 	bool isAccelerating;
 
 	float gravity;
@@ -71,7 +71,7 @@ public:
 	void update() {
 		//gravity
 		velocity.y += mass * gravity;
-		
+
 		//friction 
 		float f_force = friction.x * mass * gravity;
 		float f_direction = (velocity.x > 0) ? -1.0 : 1.0;
@@ -111,18 +111,18 @@ public:
 	bool grounded = false;
 	bool can_jump = false;
 
-	void move_x (float vel) { velocity.x = vel; }
+	void move_x(float vel) { velocity.x = vel; }
 	void accelerate() { isAccelerating = true; }
 	void decelerate() { isAccelerating = false; }
-	void jump(float vel) { 
-		velocity.y = vel; 
-		can_jump = true; 
+	void jump(float vel) {
+		velocity.y = vel;
+		can_jump = true;
 	}
-	
+
 	void setPos(vec2 p) { pos = p; }
 
 	//getters 
-	
+
 	vec2 getPos() { return pos; }
 	vec2 getFriction() { return friction; }
 	vec2 getVel() { return velocity; }
@@ -139,16 +139,16 @@ public:
 vec2 initPos = vec2(-0.93, -0.8754);
 vec2 endPos = vec2(0.47, 0.8690);
 vec2 scale = vec2(0.07, 0.1246);
-vec2 p_scale = vec2(scale.x*0.5, scale.y*0.5);
+vec2 p_scale = vec2(scale.x * 0.5, scale.y * 0.5);
 
 bool fullscreen = 0;
 int	winX = 50, winY = 50, winWidth = 1920, winHeight = 1080;
 bool pressed[GLFW_KEY_LAST] = { 0 }; // track pressed keys
 bool Quit = false;
-
+bool finished = false;
 //actor and hazard
 
-Sprite actor(initPos, p_scale), door(endPos, scale), background;
+Sprite actor(initPos, p_scale), door(endPos, scale), background, complete(vec2(0.0, 0.0), vec2(0.9, 1.0));
 
 Sprite wall1(vec2(-0.93, -0.0900), scale);
 Sprite wall2(vec2(-0.65, -0.6262), scale);
@@ -176,13 +176,22 @@ Sprite wall23(vec2(0.47, 0.6198), scale);
 Sprite wall24(vec2(0.61, -0.1278), scale);
 Sprite wall25(vec2(0.89, 0.3706), scale);
 
-Sprite hazard1(vec2(-0.65, 0.8690), scale);
+Sprite wallbot1(vec2(-0.37, -1.0), scale);
+Sprite wallbot2(vec2(-0.23, -1.0), scale);
+Sprite wallbot3(vec2(0.47, -1.0), scale);
+Sprite wallbot4(vec2(0.61, -1.0), scale);
+Sprite wallbot5(vec2(0.75, -1.0), scale);
+Sprite wallbot6(vec2(0.89, -1.0), scale);
+Sprite wallbot7(vec2(1.0, -1.0), scale);
+
+Sprite hazard1(vec2(-0.65, 0.8690), scale * 2);
 Sprite hazard2(vec2(-0.37, -0.8754), scale);
 Sprite hazard3(vec2(-0.23, -0.8754), scale);
-Sprite hazard4(vec2(0.47, -0.8754), scale);
-Sprite hazard5(vec2(0.61, -0.8754), scale);
-Sprite hazard6(vec2(0.75, -0.8754), scale);
-Sprite hazard7(vec2(0.89, -0.8754), scale);
+Sprite hazard4(vec2(0.12, -0.2524), scale);
+Sprite hazard5(vec2(0.47, -0.8754), scale);
+Sprite hazard6(vec2(0.61, -0.8754), scale);
+Sprite hazard7(vec2(0.75, -0.8754), scale);
+Sprite hazard8(vec2(0.89, -0.8754), scale);
 
 vector<Sprite*> wall_sprites = {
 	&wall1,
@@ -210,6 +219,14 @@ vector<Sprite*> wall_sprites = {
 	&wall23,
 	&wall24,
 	&wall25,
+
+	&wallbot1,
+	&wallbot2,
+	&wallbot3,
+	&wallbot4,
+	&wallbot5,
+	&wallbot6,
+	&wallbot7,
 };
 vector<Sprite*> hazard_sprites = {
 	&hazard1,
@@ -219,6 +236,7 @@ vector<Sprite*> hazard_sprites = {
 	&hazard5,
 	&hazard6,
 	&hazard7,
+	&hazard8,
 };
 
 
@@ -269,6 +287,8 @@ void Display() {
 	}
 	door.Display();
 	actor.Display();
+	if (finished)
+		complete.Display();
 }
 void toggleFullscreen(GLFWwindow* window) {
 	if (pressed[GLFW_KEY_F]) {
@@ -291,7 +311,7 @@ bool CheckBound(Sprite s)
 }
 
 void basic_movement(vec2& actorPos) {
-	
+
 	//static movement for testing purposes
 	if (pressed[GLFW_KEY_A] && !pressed[GLFW_KEY_D]) {
 		actorPos.x -= 0.01;
@@ -332,7 +352,8 @@ void movement() {
 #pragma region gameplay loop
 void Update() {
 	if (pressed[GLFW_KEY_ESCAPE]) Quit = true;
-	
+
+	if (finished) return;
 	vec2 actorPos = actor.GetPosition();
 	bool wall_hit = false;
 	player.setPos(actorPos);
@@ -377,6 +398,7 @@ void Update() {
 	//If reach the door/chest
 	if (actor.Intersect(door)) {
 		std::cout << "Finish, now what" << std::endl;
+		finished = true;
 	}
 }
 
@@ -386,10 +408,11 @@ int main(int ac, char** av) {
 
 	GLFWwindow* w = InitGLFW(winX, winY, winWidth, winHeight, "Sprite Demo");
 
-	#pragma region init_sprites
+#pragma region init_sprites
 	background.Initialize("Background.png");
+	complete.Initialize("levelComplete.png");
 	actor.Initialize("Body.png");
-	door.Initialize("chest.png");
+	door.Initialize("Door.png");
 
 	wall1.Initialize("Grass.png");
 	wall2.Initialize("Grass.png");
@@ -417,14 +440,23 @@ int main(int ac, char** av) {
 	wall24.Initialize("Grass.png");
 	wall25.Initialize("Grass.png");
 
+	wallbot1.Initialize("Grass.png");
+	wallbot2.Initialize("Grass.png");
+	wallbot3.Initialize("Grass.png");
+	wallbot4.Initialize("Grass.png");
+	wallbot5.Initialize("Grass.png");
+	wallbot6.Initialize("Grass.png");
+	wallbot7.Initialize("Grass.png");
+
 	hazard1.Initialize("Mace.png");
 	hazard2.Initialize("Spike_Up.png");
 	hazard3.Initialize("Spike_Up.png");
-	hazard4.Initialize("Spike_Up.png");
+	hazard4.Initialize("Mace-ball.png");
 	hazard5.Initialize("Spike_Up.png");
 	hazard6.Initialize("Spike_Up.png");
 	hazard7.Initialize("Spike_Up.png");
-	#pragma endregion
+	hazard8.Initialize("Spike_Up.png");
+#pragma endregion
 
 	RegKeyboard(Keystroke, w);
 	printf("Move with W, A, S, and D. Exit with ESC\n");
@@ -439,6 +471,7 @@ int main(int ac, char** av) {
 		glfwPollEvents();
 		toggleFullscreen(w);
 		Update();
+
 		if (Quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
 	}
 }
