@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <vector>
 #include <iostream>
+#include <stb_image.h>
 
 #include "Draw.h"
 #include "GLXtras.h"
@@ -287,6 +288,7 @@ void Display() {
 	}
 	door.Display();
 	actor.Display();
+	//if game is finished
 	if (finished)
 		complete.Display();
 }
@@ -353,7 +355,6 @@ void movement() {
 void Update() {
 	if (pressed[GLFW_KEY_ESCAPE]) Quit = true;
 
-	if (finished) return;
 	vec2 actorPos = actor.GetPosition();
 	bool wall_hit = false;
 	player.setPos(actorPos);
@@ -407,6 +408,11 @@ void Update() {
 int main(int ac, char** av) {
 
 	GLFWwindow* w = InitGLFW(winX, winY, winWidth, winHeight, "Sprite Demo");
+
+	GLFWimage icon[1];
+	icon[0].pixels = stbi_load("coin.png", &icon[0].width, &icon[0].height, 0, 4);
+	glfwSetWindowIcon(w, 1, icon);
+	stbi_image_free(icon[0].pixels);
 
 #pragma region init_sprites
 	background.Initialize("Background.png");
