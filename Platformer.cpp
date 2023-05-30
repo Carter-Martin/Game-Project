@@ -15,8 +15,12 @@
 #include <GLFW/glfw3.h>
 #include <stdio.h>
 #include <vector>
-#include <iostream>
 #include <stb_image.h>
+
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <iostream>
 
 #include "Draw.h"
 #include "GLXtras.h"
@@ -26,7 +30,7 @@
 const float VELOCITY_X = 0.2;
 const float JUMP = 150;
 
-const float GRAVITY = 0.0001; // gravitational acceleration
+const float GRAVITY = 1.5; // gravitational acceleration
 const float FRICTION_X = 0.001;
 const float FRICTION_Y = 0.0001;
 const float ACCELERATION_X = 0.01;
@@ -54,7 +58,7 @@ private:
 	float gravity;
 
 public:
-	PhysicsObject(float fx, float fy, float ax, float dx, float m, bool isAcc, bool g = GRAVITY) {
+	PhysicsObject(float fx, float fy, float ax, float dx, float m, bool isAcc, float g = GRAVITY) {
 		pos = vec2(0.0, 0.0);
 		velocity = vec2(0.0, 0.0);
 		friction = vec2(fx, fy);
@@ -136,11 +140,13 @@ public:
 
 #pragma endregion 
 
+
+
 #pragma region variables
-vec2 initPos = vec2(-0.93, -0.8754);
-vec2 endPos = vec2(0.47, 0.8690);
-vec2 scale = vec2(0.07, 0.1246);
-vec2 p_scale = vec2(scale.x * 0.5, scale.y * 0.5);
+vec2 initPos = vec2(-0.93f, -0.8754f);
+vec2 endPos = vec2(0.47f, 0.8690f);
+vec2 scale = vec2(0.07f, 0.1246f);
+vec2 p_scale = vec2(scale.x * 0.5f, scale.y * 0.5f);
 
 bool fullscreen = 0;
 int	winX = 50, winY = 50, winWidth = 1920, winHeight = 1080;
@@ -149,99 +155,145 @@ bool Quit = false;
 bool finished = false;
 //actor and hazard
 
-Sprite actor(initPos, p_scale), door(endPos, scale), background, complete(vec2(0.0, 0.0), vec2(0.9, 1.0));
-
-Sprite wall1(vec2(-0.93, -0.0900), scale);
-Sprite wall2(vec2(-0.65, -0.6262), scale);
-Sprite wall3(vec2(-0.51, 0.1214), scale);
-Sprite wall4(vec2(-0.51, -0.1278), scale);
-Sprite wall5(vec2(-0.51, -0.3770), scale);
-Sprite wall6(vec2(-0.51, -0.6262), scale);
-Sprite wall7(vec2(-0.51, -0.8754), scale);
-Sprite wall8(vec2(-0.09, -0.8754), scale);
-Sprite wall9(vec2(-0.09, -0.6262), scale);
-Sprite wall10(vec2(-0.09, -0.3770), scale);
-Sprite wall11(vec2(0.05, -0.8754), scale);
-Sprite wall12(vec2(0.05, -0.6262), scale);
-Sprite wall13(vec2(0.05, -0.3770), scale);
-Sprite wall14(vec2(0.12, -0.8754), scale);
-Sprite wall15(vec2(0.12, -0.6262), scale);
-Sprite wall16(vec2(0.12, -0.3770), scale);
-Sprite wall17(vec2(0.19, -0.8754), scale);
-Sprite wall18(vec2(0.19, -0.6262), scale);
-Sprite wall19(vec2(0.19, -0.3770), scale);
-Sprite wall20(vec2(0.33, -0.8754), scale);
-Sprite wall21(vec2(0.33, -0.6262), scale);
-Sprite wall22(vec2(0.33, -0.3770), scale);
-Sprite wall23(vec2(0.47, 0.6198), scale);
-Sprite wall24(vec2(0.61, -0.1278), scale);
-Sprite wall25(vec2(0.89, 0.3706), scale);
-
-Sprite wallbot1(vec2(-0.37, -1.0), scale);
-Sprite wallbot2(vec2(-0.23, -1.0), scale);
-Sprite wallbot3(vec2(0.47, -1.0), scale);
-Sprite wallbot4(vec2(0.61, -1.0), scale);
-Sprite wallbot5(vec2(0.75, -1.0), scale);
-Sprite wallbot6(vec2(0.89, -1.0), scale);
-Sprite wallbot7(vec2(1.0, -1.0), scale);
-
-Sprite hazard1(vec2(-0.65, 0.8690), scale * 2);
-Sprite hazard2(vec2(-0.37, -0.8754), scale);
-Sprite hazard3(vec2(-0.23, -0.8754), scale);
-Sprite hazard4(vec2(0.12, -0.2524), scale);
-Sprite hazard5(vec2(0.47, -0.8754), scale);
-Sprite hazard6(vec2(0.61, -0.8754), scale);
-Sprite hazard7(vec2(0.75, -0.8754), scale);
-Sprite hazard8(vec2(0.89, -0.8754), scale);
-
-vector<Sprite*> wall_sprites = {
-	&wall1,
-	&wall2,
-	&wall3,
-	&wall4,
-	&wall5,
-	&wall6,
-	&wall7,
-	&wall8,
-	&wall9,
-	&wall10,
-	&wall11,
-	&wall12,
-	&wall13,
-	&wall14,
-	&wall15,
-	&wall16,
-	&wall17,
-	&wall18,
-	&wall19,
-	&wall20,
-	&wall21,
-	&wall22,
-	&wall23,
-	&wall24,
-	&wall25,
-
-	&wallbot1,
-	&wallbot2,
-	&wallbot3,
-	&wallbot4,
-	&wallbot5,
-	&wallbot6,
-	&wallbot7,
-};
-vector<Sprite*> hazard_sprites = {
-	&hazard1,
-	&hazard2,
-	&hazard3,
-	&hazard4,
-	&hazard5,
-	&hazard6,
-	&hazard7,
-	&hazard8,
-};
-
+Sprite actor, door, background, complete(vec2(0.0f, 0.0f), vec2(0.9f, 1.0f));
 
 PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
+
+#pragma endregion
+
+#pragma region level
+
+class level {
+public:
+	level(std::string levelName) {
+		readLevel(levelName);
+	}
+	std::vector<Sprite> walls;
+	std::vector<Sprite> hazards;
+	bool readLevel(std::string);
+	void clearLevel();
+	void loadLevel();
+	void nextLevel(std::string);
+private:
+	struct levelObject {
+		std::string file;
+		std::string type;
+		vec2 pos;
+		vec2 endPos;
+		vec2 scale;
+	};
+	//const vec2 sDist = vec2(0.14f, 0.2492f);
+	Sprite initSprite(std::string, vec2, vec2);
+	void loadObject(std::vector<Sprite>*, levelObject);
+	void tessX(std::vector<Sprite>*, levelObject);
+	void tessY(std::vector<Sprite>*, levelObject);
+	const vector <float> gridy = { -1,-0.8754,-0.6262,-0.377,-0.1278,0.1214,0.3706,0.6198,0.869,1 };
+	const vector <float> gridx = { -1,-0.93,-0.79,-0.65,-0.51,-0.37,-0.23,-0.09,0.05,0.12,0.19,0.33,0.47,0.61,0.75,0.89,1 };
+
+	std::vector<levelObject> objs;
+	vec2 playerPos;
+};
+Sprite level::initSprite(std::string file, vec2 pos, vec2 scale) {
+	Sprite s(pos, scale);
+	s.Initialize(file);
+	return s;
+}
+
+bool level::readLevel(std::string fileName) {
+	std::ifstream infile(fileName);
+	if (!infile) return false;
+	std::string line;
+	std::getline(infile, line);
+	while (std::getline(infile, line)) {
+		std::cout << line << std::endl;
+		std::stringstream ss(line);
+		levelObject obj;
+		ss >> obj.file >> obj.type >> obj.pos.x >> obj.pos.y >> obj.endPos.x >> obj.endPos.y >> obj.scale.x >> obj.scale.y;
+		objs.push_back(obj);
+	}
+	return true;
+}
+void level::clearLevel() {
+	for (Sprite s : walls) {
+		s.Release();
+	}
+	for (Sprite s : hazards) {
+		s.Release();
+	}
+	walls.clear();
+	hazards.clear();
+	//actor.Release();
+	//door.Release();
+}
+
+void level::tessX(std::vector<Sprite>* spriteType, levelObject obj) {
+	int direction = (obj.pos.x > obj.endPos.x) ? -1 : 1;
+	int index = 0;
+	for (float x : gridx) {
+		if (x == obj.pos.x) break;
+		index++;
+	}
+	//printf("FILL X  | direction: %d, from: %f, to: %f\n", direction, obj.pos.x, obj.endPos.x);
+	while (gridx[index] != obj.endPos.x) {
+		//printf("index: %d, val: %f\n", index, gridx[index]);
+		spriteType->push_back(initSprite(obj.file, vec2(gridx[index], obj.pos.y), obj.scale));
+		index += direction;
+	}
+	if (gridx[index] == obj.endPos.x) spriteType->push_back(initSprite(obj.file, vec2(gridx[index], obj.pos.y), obj.scale));
+}
+void level::tessY(std::vector<Sprite>* spriteType, levelObject obj) {
+	int direction = (obj.pos.y > obj.endPos.y) ? -1 : 1;
+	int index = 0;
+	for (float y : gridy) {
+		if (y == obj.pos.y) break;
+		index++;
+	}
+	//printf("FILL Y  | direction: %d, from: %f, to: %f\n", direction, obj.pos.y, obj.endPos.y);
+	while (gridy[index] != obj.endPos.y) {
+		//printf("index: %d, val: %f\n", index, gridy[index]);
+		spriteType->push_back(initSprite(obj.file, vec2(obj.pos.x, gridy[index]), obj.scale));
+		index += direction;
+	}
+	if (gridy[index] == obj.endPos.y) spriteType->push_back(initSprite(obj.file, vec2(obj.pos.x, gridy[index]), obj.scale));
+}
+void level::loadObject(std::vector<Sprite>* spriteType, levelObject obj) {
+	if (obj.pos.x != obj.endPos.x) {
+		tessX(spriteType, obj);
+	}
+	if (obj.pos.y != obj.endPos.y) {
+		tessY(spriteType, obj);
+	}
+	walls.push_back(initSprite(obj.file, obj.pos, obj.scale));
+}
+
+void level::loadLevel() {
+	for (auto o : objs) {
+		if (o.type == "wall") {
+			loadObject(&walls, o);
+		}
+		else if (o.type == "hazard") {
+			loadObject(&hazards, o);
+		}
+		else if (o.type == "actor") {
+			actor.SetScale(o.scale);
+			actor.SetPosition(o.pos);
+			initPos = o.pos;
+		}
+		else if (o.type == "door") {
+			door.SetScale(o.scale);
+			door.SetPosition(o.pos);
+		}
+
+	}
+	objs.clear();
+}
+void level::nextLevel(std::string fileName) {
+	clearLevel();
+	readLevel(fileName);
+	loadLevel();
+}
+
+level* lv;
 
 #pragma endregion
 
@@ -280,11 +332,11 @@ void Keystroke(int key, int press, bool shift, bool control) {
 
 void Display() {
 	background.Display();
-	for (Sprite* w : wall_sprites) {
-		w->Display();
+	for (Sprite w : lv->walls) {
+		w.Display();
 	}
-	for (Sprite* h : hazard_sprites) {
-		h->Display();
+	for (Sprite h : lv->hazards) {
+		h.Display();
 	}
 	door.Display();
 	actor.Display();
@@ -346,7 +398,6 @@ void movement() {
 	if (pressed[GLFW_KEY_W] && !pressed[GLFW_KEY_S]) {
 		player.jump(JUMP);
 	}
-
 }
 
 #pragma endregion
@@ -367,15 +418,25 @@ void Update() {
 	temp.SetPosition(actorPos);
 
 	//Check if actor touches wall
-	for (Sprite* i : wall_sprites) {
+	for (Sprite i : lv->walls) {
 		//if actor touches any wall sprites
-		if (temp.Intersect(*i))
+		if (temp.Intersect(i))
 		{
 			std::cout << "intersect wall_sprites" << std::endl;
 			wall_hit = true;
 		}
 	}
-
+	//Check if actor touches a hazard
+	for (Sprite i : lv->hazards) {
+		//if actor touches any hazard sprites
+		if (actor.Intersect(i))
+		{
+			std::cout << "intersect hazard" << std::endl;
+			//Return to starting point
+			actor.SetPosition(initPos);
+		}
+	}
+	
 	//set new position if actor move and hit a wall or out of bound
 	if (wall_hit) {
 		player.grounded = true;
@@ -386,16 +447,7 @@ void Update() {
 	if (!CheckBound(temp)) {
 		actor.SetPosition(actorPos);
 	}
-	//Check if actor touches a hazard
-	for (Sprite* i : hazard_sprites) {
-		//if actor touches any hazard sprites
-		if (actor.Intersect(*i))
-		{
-			std::cout << "intersect hazard" << std::endl;
-			//Return to starting point
-			actor.SetPosition(initPos);
-		}
-	}
+
 	//If reach the door/chest
 	if (actor.Intersect(door)) {
 		std::cout << "Finish, now what" << std::endl;
@@ -407,11 +459,12 @@ void Update() {
 
 int main(int ac, char** av) {
 
-	GLFWwindow* w = InitGLFW(winX, winY, winWidth, winHeight, "Sprite Demo");
+	GLFWwindow* w = InitGLFW(winX, winY, winWidth, winHeight, "Platformer");
 
 	GLFWimage icon[1];
 	icon[0].pixels = stbi_load("coin.png", &icon[0].width, &icon[0].height, 0, 4);
 	glfwSetWindowIcon(w, 1, icon);
+	glfwMaximizeWindow(w);
 	stbi_image_free(icon[0].pixels);
 
 #pragma region init_sprites
@@ -420,52 +473,13 @@ int main(int ac, char** av) {
 	actor.Initialize("Body.png");
 	door.Initialize("Door.png");
 
-	wall1.Initialize("Grass.png");
-	wall2.Initialize("Grass.png");
-	wall3.Initialize("Grass.png");
-	wall4.Initialize("Dirt.png");
-	wall5.Initialize("Dirt.png");
-	wall6.Initialize("Dirt.png");
-	wall7.Initialize("Dirt.png");
-	wall8.Initialize("Dirt.png");
-	wall9.Initialize("Dirt.png");
-	wall10.Initialize("Grass.png");
-	wall11.Initialize("Dirt.png");
-	wall12.Initialize("Dirt.png");
-	wall13.Initialize("Grass.png");
-	wall14.Initialize("Dirt.png");
-	wall15.Initialize("Dirt.png");
-	wall16.Initialize("Grass.png");
-	wall17.Initialize("Dirt.png");
-	wall18.Initialize("Dirt.png");
-	wall19.Initialize("Grass.png");
-	wall20.Initialize("Dirt.png");
-	wall21.Initialize("Dirt.png");
-	wall22.Initialize("Grass.png");
-	wall23.Initialize("Grass.png");
-	wall24.Initialize("Grass.png");
-	wall25.Initialize("Grass.png");
-
-	wallbot1.Initialize("Grass.png");
-	wallbot2.Initialize("Grass.png");
-	wallbot3.Initialize("Grass.png");
-	wallbot4.Initialize("Grass.png");
-	wallbot5.Initialize("Grass.png");
-	wallbot6.Initialize("Grass.png");
-	wallbot7.Initialize("Grass.png");
-
-	hazard1.Initialize("Mace.png");
-	hazard2.Initialize("Spike_Up.png");
-	hazard3.Initialize("Spike_Up.png");
-	hazard4.Initialize("Mace-ball.png");
-	hazard5.Initialize("Spike_Up.png");
-	hazard6.Initialize("Spike_Up.png");
-	hazard7.Initialize("Spike_Up.png");
-	hazard8.Initialize("Spike_Up.png");
 #pragma endregion
 
 	RegKeyboard(Keystroke, w);
-	printf("Move with W, A, S, and D. Exit with ESC\n");
+	printf("Move with W, A, and D. Exit with ESC\n");
+
+	lv = new level("level2.txt");
+	lv->loadLevel();
 
 	// event loop
 	while (!glfwWindowShouldClose(w)) {
@@ -478,6 +492,7 @@ int main(int ac, char** av) {
 		toggleFullscreen(w);
 		Update();
 
+		if (pressed[GLFW_KEY_C]) lv->clearLevel();
 		if (Quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
 	}
 }
