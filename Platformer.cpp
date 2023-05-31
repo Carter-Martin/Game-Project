@@ -144,18 +144,32 @@ public:
 
 #pragma region variables
 vec2 initPos = vec2(-0.93f, -0.8754f);
-vec2 endPos = vec2(0.47f, 0.8690f);
-vec2 scale = vec2(0.07f, 0.1246f);
-vec2 p_scale = vec2(scale.x * 0.5f, scale.y * 0.5f);
+//vec2 endPos = vec2(0.47f, 0.8690f);
+//vec2 scale = vec2(0.07f, 0.1246f);
+//vec2 p_scale = vec2(scale.x * 0.5f, scale.y * 0.5f);
 
 bool fullscreen = 0;
 int	winX = 50, winY = 50, winWidth = 1920, winHeight = 1080;
 bool pressed[GLFW_KEY_LAST] = { 0 }; // track pressed keys
-bool Quit = false;
-bool finished = false;
-//actor and hazard
 
-Sprite actor, door, background, complete(vec2(0.0f, 0.0f), vec2(0.9f, 1.0f));
+//Game state
+bool menu = true;
+bool options = false;
+bool game = false;
+bool quit = false;
+bool finished = false;
+
+//actor and hazard
+Sprite title(vec2(0.0f, 0.5f), vec2(0.7f, 0.7f)),
+playbtn(vec2(0.0f, 0.0f), vec2(0.125f, 0.125f)),
+optionsbtn(vec2(0.0f, -0.25f), vec2(0.15f, 0.15f)),
+quitbtn(vec2(0.0f, -0.47f), vec2(0.11f, 0.11f)),
+homebtn(vec2(-0.15f, -0.3f), vec2(0.1f, 0.1f)),
+nextbtn(vec2(0.15f, -0.3f), vec2(0.1f, 0.1f)),
+actor,
+door,
+background,
+complete(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f));
 
 PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
 
@@ -173,6 +187,7 @@ public:
 	bool readLevel(std::string);
 	void clearLevel();
 	void loadLevel();
+	void restartLevel();
 	void nextLevel(std::string);
 private:
 	struct levelObject {
@@ -263,6 +278,7 @@ void level::loadObject(std::vector<Sprite>* spriteType, levelObject obj) {
 	if (obj.pos.y != obj.endPos.y) {
 		tessY(spriteType, obj);
 	}
+	//why walls, u mean spriteType?
 	walls.push_back(initSprite(obj.file, obj.pos, obj.scale));
 }
 
@@ -287,6 +303,11 @@ void level::loadLevel() {
 	}
 	objs.clear();
 }
+
+void level::restartLevel() {
+	actor.SetPosition(initPos);
+}
+
 void level::nextLevel(std::string fileName) {
 	clearLevel();
 	readLevel(fileName);
@@ -299,9 +320,45 @@ level* lv;
 
 #pragma region glfw
 
+void MouseButton(float x, float y, bool left, bool down) {
+	if (down) {
+		//On Menu Page
+		if (playbtn.Hit(x, y)) {
+			playbtn.Down(x, y);
+			menu = false;
+			game = true;
+		}
+		else if (optionsbtn.Hit(x, y)) {
+			optionsbtn.Down(x, y);
+			//menu = false;
+			//options = true;
+		}
+		else if (quitbtn.Hit(x, y)) {
+			quitbtn.Down(x, y);
+			quit = true;
+		}
+		//On Level Complete
+		else if (homebtn.Hit(x, y)) {
+			homebtn.Down(x, y);
+			//go back to menu page
+			menu = true;
+			game = false;
+			finished = false;
+			lv->restartLevel();
+		}
+		else if (nextbtn.Hit(x, y)) {
+			nextbtn.Down(x, y);
+			//load next level
+			finished = false;
+			lv->nextLevel("Level2.txt");
+		}
+	}
+}
+
 typedef void(*KeyCallback)(int key, int press, bool shift, bool control);
 KeyCallback kcb = NULL;
 void RegKeyboard(KeyCallback, GLFWwindow*);
+
 void Key(GLFWwindow* w, int key, int scancode, int action, int mods) {
 	kcb(key, action, mods & GLFW_MOD_SHIFT, mods & GLFW_MOD_CONTROL);
 }
@@ -332,6 +389,18 @@ void Keystroke(int key, int press, bool shift, bool control) {
 
 void Display() {
 	background.Display();
+	if (menu) {
+		//display the startGame sprite 
+		title.Display();
+		playbtn.Display();
+		optionsbtn.Display();
+		quitbtn.Display();
+		return;
+	}
+	else if (options) {
+		//display settings
+		return;
+	}
 	for (Sprite w : lv->walls) {
 		w.Display();
 	}
@@ -341,8 +410,15 @@ void Display() {
 	door.Display();
 	actor.Display();
 	//if game is finished
+	std::cout << "finished: " << finished << endl;
 	if (finished)
+	{
 		complete.Display();
+		homebtn.Display();
+		nextbtn.Display();
+	}
+
+
 }
 void toggleFullscreen(GLFWwindow* window) {
 	if (pressed[GLFW_KEY_F]) {
@@ -404,7 +480,7 @@ void movement() {
 
 #pragma region gameplay loop
 void Update() {
-	if (pressed[GLFW_KEY_ESCAPE]) Quit = true;
+	if (pressed[GLFW_KEY_ESCAPE]) quit = true;
 
 	vec2 actorPos = actor.GetPosition();
 	bool wall_hit = false;
@@ -433,10 +509,10 @@ void Update() {
 		{
 			std::cout << "intersect hazard" << std::endl;
 			//Return to starting point
-			actor.SetPosition(initPos);
+			lv->restartLevel();
 		}
 	}
-	
+
 	//set new position if actor move and hit a wall or out of bound
 	if (wall_hit) {
 		player.grounded = true;
@@ -469,12 +545,19 @@ int main(int ac, char** av) {
 
 #pragma region init_sprites
 	background.Initialize("Background.png");
-	complete.Initialize("levelComplete.png");
+	title.Initialize("Title.png");
+	playbtn.Initialize("Play.png");
+	optionsbtn.Initialize("Options.png");
+	quitbtn.Initialize("Quit.png");
+	homebtn.Initialize("Home.png");
+	nextbtn.Initialize("Next.png");
+	complete.Initialize("Complete.png");
 	actor.Initialize("Body.png");
 	door.Initialize("Door.png");
 
 #pragma endregion
 
+	RegisterMouseButton(MouseButton);
 	RegKeyboard(Keystroke, w);
 	printf("Move with W, A, and D. Exit with ESC\n");
 
@@ -493,6 +576,6 @@ int main(int ac, char** av) {
 		Update();
 
 		if (pressed[GLFW_KEY_C]) lv->clearLevel();
-		if (Quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
+		if (quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
 	}
 }
