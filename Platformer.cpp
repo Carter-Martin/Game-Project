@@ -1,47 +1,88 @@
 /**
 * Group 13
-* Platformer.cpp
-* Use W, A, and D to move. Exit the game with ESC. Fullscren with F.
-*
+* DangerDash.cpp
+* Move with W, A, and D. Exit with ESC. Change volume with - and =.
+* 
+* The goal of the game is to finish all the levels with the least amount
+* of resets.
 */
-#define _USE_MATH_DEFINES
+
 #include <math.h>
 #include <cmath>
 #include <cstdlib>
-#include <chrono>
-#include <thread>
-
-#include <glad.h>
-#include <GLFW/glfw3.h>
-#include <stdio.h>
 #include <vector>
-#include <stb_image.h>
-
+#include <map>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <iostream>
 
+#include <glad.h>
+#include <GLFW/glfw3.h>
+#include <SFML/Audio.hpp>
+#include <stdio.h>
+#include <stb_image.h>
+
 #include "Draw.h"
 #include "GLXtras.h"
 #include "Sprite.h"
+#include "Text.h"
 
-#pragma region player physics
-const float VELOCITY_X = 0.2;
-const float JUMP = 150;
+#pragma region declarations
+const float VELOCITY_X = 0.3,
+	JUMP = 275,
+	GRAVITY = 1.5,
+	FRICTION_X = 0.001,
+	FRICTION_Y = 0.0001,
+	ACCELERATION_X = 0.01,
+	DECELERATION_X = 0.02,
+	MASS = 0.02,
+	X_DAMPER = 0.02,
+	Y_DAMPER = 0.00008,
+	MAX_VELOCITY = 0.3;
 
-const float GRAVITY = 1.5; // gravitational acceleration
-const float FRICTION_X = 0.001;
-const float FRICTION_Y = 0.0001;
-const float ACCELERATION_X = 0.01;
-const float DECELERATION_X = 0.02;
-const float MASS = 0.02;
+const vec2 DEFAULT_GRID = vec2(0.14, 0.2492);
+const vec2 DEFAULT_SCALE = vec2(0.07, 0.1246);
 
-const float X_DAMPER = 0.02;
-const float Y_DAMPER = 0.00008;
-const float MAX_VELOCITY = 0.2;
+std::vector<std::string> soundFiles({ "jump.wav", "death.wav", "fall_death.wav", "next_level.wav", "click-button.wav" });
+std::vector<std::string> soundNames({ "jump", "death", "fall_death", "next_level", "click_button" });
+
+bool pressed[GLFW_KEY_LAST] = { 0 }; // track pressed keys
+
+vec2 initPos, endPos, scale = vec2(0.07f, 0.1246f);;
+int deaths = 0, currentLevel = 0, winX = 50, winY = 50, winWidth = 1920, winHeight = 1080;
+bool fullscreen = false, 
+	playMusic = false, 
+	menu = true, 
+	options = false, 
+	game = false, 
+	quit = false, 
+	finished = false,
+	win = false;
+
+Sprite* actor, * door, background, 
+title(vec2(0.0f, 0.5f), vec2(0.7f, 0.7f)),
+playbtn(vec2(0.0f, 0.0f), vec2(0.125f, 0.125f)),
+optionsbtn(vec2(0.0f, -0.25f), vec2(0.15f, 0.15f)),
+quitbtn(vec2(0.0f, -0.47f), vec2(0.11f, 0.11f)),
+homebtn(vec2(-0.15f, -0.3f), vec2(0.1f, 0.1f)),
+nextbtn(vec2(0.15f, -0.3f), vec2(0.1f, 0.1f)),
+complete(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f)),
+increase(vec2(0.2f, 0.1f), vec2(0.08f, 0.08f)),
+decrease(vec2(0.2f, -0.1f), vec2(0.08f, 0.08f)),
+frame(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f));
 
 
+vector<Sprite*> spritesCollide;
+
+sf::Music music;
+
+#pragma endregion
+
+/*
+	PhysicsObject simulates the physics of a 2d rectangle with the 
+	provided parameters.
+*/
 class PhysicsObject {
 private:
 	vec2 pos;
@@ -75,8 +116,7 @@ public:
 
 	void update() {
 		//gravity
-		velocity.y += mass * gravity;
-
+		if(!grounded) velocity.y += mass * gravity;
 		//friction 
 		float f_force = friction.x * mass * gravity;
 		float f_direction = (velocity.x > 0) ? -1.0 : 1.0;
@@ -86,11 +126,9 @@ public:
 
 		//acceleration or deceleration
 		if (isAccelerating) {
-			//printf("accel\n");
 			velocity.x += acceleration;
 		}
 		else {
-			//printf("decel\n");
 			float dec_direction = (velocity.x > 0) ? -1.0 : 1.0;
 			if (velocity.x == 0) dec_direction = 0;
 			velocity.x += dec_direction * deceleration;
@@ -99,32 +137,21 @@ public:
 			}
 		}
 		if (abs(velocity.x) > MAX_VELOCITY) velocity.x = MAX_VELOCITY;
-		//update positions
 		pos.x += velocity.x * X_DAMPER;
-		if (!grounded) {
-			pos.y += velocity.y * Y_DAMPER;
-			can_jump = false;
-		}
-		else {
-			if (can_jump) {
-				pos.y += velocity.y * Y_DAMPER;
-				can_jump = false;
-			}
-		}
+		pos.y += velocity.y * Y_DAMPER;
+
 	}
 
-	bool grounded = false;
-	bool can_jump = false;
+	bool grounded = true,
+		obstructed = false;
 
-	void move_x(float vel) { velocity.x = vel; }
+	void move_x(float vel) { if(!obstructed) velocity.x = vel; }
 	void accelerate() { isAccelerating = true; }
 	void decelerate() { isAccelerating = false; }
-	void jump(float vel) {
-		velocity.y = vel;
-		can_jump = true;
-	}
+	void jump(float vel) { if(grounded) velocity.y = vel; }
 
 	void setPos(vec2 p) { pos = p; }
+	void setVel(vec2 v) { velocity = v; }
 
 	//getters 
 
@@ -137,93 +164,107 @@ public:
 
 };
 
+#pragma region sounds
 
-#pragma endregion 
+/*
+	Audio handles playing sound effects through SFML.
+*/
+class Audio {
 
+private:
+	sf::SoundBuffer buffer;
+	sf::Sound sound;
+	std::string file;
+public:
+	Audio(std::string f) {
+		file = f;
+		buffer.loadFromFile(file);
+		sound.setBuffer(buffer);
+	}
+	void play() {
+		sound.play();
+	}
+	void stop() {
+		sound.stop();
+	}
+};
+std::map<std::string, Audio*> audio;
 
+// load a sound into the audio map
+void loadsfx(std::vector<std::string> sounds, std::vector<std::string> names) {
+	int i = 0;
+	for (std::string s : sounds) {
+		audio[names[i++]] = new Audio(s);
+	}
+}
 
-#pragma region variables
-vec2 initPos = vec2(-0.93f, -0.8754f);
-//vec2 endPos = vec2(0.47f, 0.8690f);
-//vec2 scale = vec2(0.07f, 0.1246f);
-//vec2 p_scale = vec2(scale.x * 0.5f, scale.y * 0.5f);
+// initialize the music 
+int initMusic(std::string file) {
+	if (!music.openFromFile(file))
+		return -1; // error
+	music.setLoop(true);
 
-bool fullscreen = 0;
-int	winX = 50, winY = 50, winWidth = 1920, winHeight = 1080;
-bool pressed[GLFW_KEY_LAST] = { 0 }; // track pressed keys
+}
 
-//Game state
-bool menu = true;
-bool options = false;
-bool game = false;
-bool quit = false;
-bool finished = false;
+// stop the current music, and play a new file
+void changeMusic(std::string file) {
+	music.stop();
+	initMusic(file);
+	music.play();
+}
 
-//actor and hazard
-Sprite title(vec2(0.0f, 0.5f), vec2(0.7f, 0.7f)),
-playbtn(vec2(0.0f, 0.0f), vec2(0.125f, 0.125f)),
-optionsbtn(vec2(0.0f, -0.25f), vec2(0.15f, 0.15f)),
-quitbtn(vec2(0.0f, -0.47f), vec2(0.11f, 0.11f)),
-homebtn(vec2(-0.15f, -0.3f), vec2(0.1f, 0.1f)),
-nextbtn(vec2(0.15f, -0.3f), vec2(0.1f, 0.1f)),
-actor,
-door,
-background,
-complete(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f)),
-increase(vec2(0.2f, 0.1f), vec2(0.08f, 0.08f)),
-decrease(vec2(0.2f, -0.1f), vec2(0.08f, 0.08f)),
-frame(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f));
-
-PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
-
+// adjust the global volume by an integer. Global volume can range from 0 to 100.
+void musicVolume(int add) {
+	int currentVol = sf::Listener::getGlobalVolume();
+	if(currentVol + add >= 0 && currentVol + add <= 100) sf::Listener::setGlobalVolume(currentVol + add);
+}
 #pragma endregion
 
 #pragma region level
 
+/*
+	level handles all level sprites and objectives
+*/
 class level {
 public:
 	level(std::string levelName) {
 		readLevel(levelName);
 	}
-	std::vector<Sprite> walls;
-	std::vector<Sprite> hazards;
+	std::vector<Sprite> walls, floors, hazards;
 	bool readLevel(std::string);
 	void clearLevel();
 	void loadLevel();
-	void restartLevel();
+	void restartLevel(std::string);
 	void nextLevel(std::string);
 private:
 	struct levelObject {
-		std::string file;
-		std::string type;
-		vec2 pos;
-		vec2 endPos;
-		vec2 scale;
+		std::string file, type;
+		vec2 pos, endPos, scale;
 	};
-	//const vec2 sDist = vec2(0.14f, 0.2492f);
-	Sprite initSprite(std::string, vec2, vec2);
+	Sprite* initSprite(std::string, vec2, vec2);
 	void loadObject(std::vector<Sprite>*, levelObject);
 	void tessX(std::vector<Sprite>*, levelObject);
 	void tessY(std::vector<Sprite>*, levelObject);
-	const vector <float> gridy = { -1,-0.8754,-0.6262,-0.377,-0.1278,0.1214,0.3706,0.6198,0.869,1 };
-	const vector <float> gridx = { -1,-0.93,-0.79,-0.65,-0.51,-0.37,-0.23,-0.09,0.05,0.12,0.19,0.33,0.47,0.61,0.75,0.89,1 };
 
 	std::vector<levelObject> objs;
 	vec2 playerPos;
 };
-Sprite level::initSprite(std::string file, vec2 pos, vec2 scale) {
-	Sprite s(pos, scale);
-	s.Initialize(file);
+
+// initialize the given file as a sprite and return it 
+Sprite* level::initSprite(std::string file, vec2 pos, vec2 scale) {
+	Sprite* s = new Sprite(pos, scale);
+	s->Initialize(file);
 	return s;
 }
 
+// read the level file and push the sprites to the objs vector
 bool level::readLevel(std::string fileName) {
 	std::ifstream infile(fileName);
 	if (!infile) return false;
 	std::string line;
 	std::getline(infile, line);
 	while (std::getline(infile, line)) {
-		std::cout << line << std::endl;
+		//std::cout << line << std::endl;
 		std::stringstream ss(line);
 		levelObject obj;
 		ss >> obj.file >> obj.type >> obj.pos.x >> obj.pos.y >> obj.endPos.x >> obj.endPos.y >> obj.scale.x >> obj.scale.y;
@@ -231,49 +272,67 @@ bool level::readLevel(std::string fileName) {
 	}
 	return true;
 }
+
+// remove all level related sprites
 void level::clearLevel() {
 	for (Sprite s : walls) {
+		s.Release();
+	}
+	for (Sprite s : floors) {
 		s.Release();
 	}
 	for (Sprite s : hazards) {
 		s.Release();
 	}
 	walls.clear();
+	floors.clear();
 	hazards.clear();
-	//actor.Release();
-	//door.Release();
+	spritesCollide.clear();
+	actor->Release();
+	door->Release();
 }
 
+// reset the position of the player
+void level::restartLevel(std::string type = "") {
+	actor->SetPosition(initPos);
+	if (type != "") {
+		audio[type]->play();
+	}
+}
+
+// tesselate a sprite in the X direction. A positive value will add that many sprites 
+// in the positive X direction. A negative value will add that many sprites in the 
+// negative X direction. 
 void level::tessX(std::vector<Sprite>* spriteType, levelObject obj) {
-	int direction = (obj.pos.x > obj.endPos.x) ? -1 : 1;
-	int index = 0;
-	for (float x : gridx) {
-		if (x == obj.pos.x) break;
-		index++;
+	int direction = (obj.endPos.x < 0) ? -1 : 1;
+	float current = obj.pos.x;
+	for (int i = 0; i < abs(obj.endPos.x); i++) {
+		Sprite* s = initSprite(obj.file, vec2(current * DEFAULT_GRID.x, obj.pos.y * DEFAULT_GRID.y), (obj.scale* DEFAULT_SCALE));
+		spriteType->push_back(*s);
+		if (obj.type == "hazard") {
+			spritesCollide.push_back(s);
+		}
+		current += direction;
 	}
-	//printf("FILL X  | direction: %d, from: %f, to: %f\n", direction, obj.pos.x, obj.endPos.x);
-	while (gridx[index] != obj.endPos.x) {
-		//printf("index: %d, val: %f\n", index, gridx[index]);
-		spriteType->push_back(initSprite(obj.file, vec2(gridx[index], obj.pos.y), obj.scale));
-		index += direction;
-	}
-	if (gridx[index] == obj.endPos.x) spriteType->push_back(initSprite(obj.file, vec2(gridx[index], obj.pos.y), obj.scale));
 }
+
+// tesselate a sprite in the Y direction. A positive value will add that many sprites 
+// in the positive Y direction. A negative value will add that many sprites in the 
+// negative Y direction. 
 void level::tessY(std::vector<Sprite>* spriteType, levelObject obj) {
-	int direction = (obj.pos.y > obj.endPos.y) ? -1 : 1;
-	int index = 0;
-	for (float y : gridy) {
-		if (y == obj.pos.y) break;
-		index++;
+	int direction = (obj.endPos.y < 0) ? -1 : 1;
+	float current = obj.pos.y;
+	for (int i = 0; i < abs(obj.endPos.y); i++) {
+		Sprite* s = initSprite(obj.file, vec2(obj.pos.x * DEFAULT_GRID.x, current * DEFAULT_GRID.y), (obj.scale*DEFAULT_SCALE));
+		spriteType->push_back(*s);
+		if (obj.type == "hazard") {
+			spritesCollide.push_back(s);
+		}
+		current += direction;
 	}
-	//printf("FILL Y  | direction: %d, from: %f, to: %f\n", direction, obj.pos.y, obj.endPos.y);
-	while (gridy[index] != obj.endPos.y) {
-		//printf("index: %d, val: %f\n", index, gridy[index]);
-		spriteType->push_back(initSprite(obj.file, vec2(obj.pos.x, gridy[index]), obj.scale));
-		index += direction;
-	}
-	if (gridy[index] == obj.endPos.y) spriteType->push_back(initSprite(obj.file, vec2(obj.pos.x, gridy[index]), obj.scale));
 }
+
+// loads the given object to the given sprite type vector.
 void level::loadObject(std::vector<Sprite>* spriteType, levelObject obj) {
 	if (obj.pos.x != obj.endPos.x) {
 		tessX(spriteType, obj);
@@ -281,68 +340,115 @@ void level::loadObject(std::vector<Sprite>* spriteType, levelObject obj) {
 	if (obj.pos.y != obj.endPos.y) {
 		tessY(spriteType, obj);
 	}
-	//why walls, u mean spriteType?
-	walls.push_back(initSprite(obj.file, obj.pos, obj.scale));
+	Sprite* s = initSprite(obj.file, obj.pos* DEFAULT_GRID, obj.scale*DEFAULT_SCALE);
+	spriteType->push_back(*s);
+	if (obj.type == "hazard") {
+		spritesCollide.push_back(s);
+	}
 }
 
+// loads all objects from the objs vector into their respective sprite type vectors (walls, floors, hazards)
 void level::loadLevel() {
 	for (auto o : objs) {
 		if (o.type == "wall") {
 			loadObject(&walls, o);
 		}
+		if (o.type == "floor") {
+			loadObject(&floors, o);
+		}
 		else if (o.type == "hazard") {
 			loadObject(&hazards, o);
 		}
 		else if (o.type == "actor") {
-			actor.SetScale(o.scale);
-			actor.SetPosition(o.pos);
-			initPos = o.pos;
+			initPos = o.pos * DEFAULT_GRID;
+			actor = initSprite(o.file, o.pos * DEFAULT_GRID, o.scale * DEFAULT_SCALE);
+			spritesCollide.push_back(actor);
+			
 		}
 		else if (o.type == "door") {
-			door.SetScale(o.scale);
-			door.SetPosition(o.pos);
+			door = initSprite(o.file, o.pos * DEFAULT_GRID, o.scale * DEFAULT_SCALE);
 		}
-
 	}
 	objs.clear();
 }
 
-void level::restartLevel() {
-	actor.SetPosition(initPos);
-}
-
+// loads the next level. If there is no next level, the game is finished.
 void level::nextLevel(std::string fileName) {
+	audio["next_level"]->play();
 	clearLevel();
-	readLevel(fileName);
+	if (!readLevel(fileName)) finished = true;
 	loadLevel();
 }
 
+#pragma endregion
+
+#pragma region game variables
+
+PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
 level* lv;
 
 #pragma endregion
 
 #pragma region glfw
 
+typedef void(*KeyCallback)(int key, int press, bool shift, bool control);
+KeyCallback kcb = NULL;
+void RegKeyboard(KeyCallback, GLFWwindow*);
+void Key(GLFWwindow* w, int key, int scancode, int action, int mods) {
+	kcb(key, action, mods & GLFW_MOD_SHIFT, mods & GLFW_MOD_CONTROL);
+}
+
+void RegKeyboard(KeyCallback cb, GLFWwindow* w) {
+	kcb = cb;
+	glfwSetKeyCallback(w, Key);
+}
+
+void Resize(int width, int height) { glViewport(0, 0, width, height); }
+
+void Keystroke(int key, int press, bool shift, bool control) {
+	if (press == GLFW_PRESS)
+	{
+		pressed[key] = GLFW_PRESS;
+	}
+	else if (press == GLFW_RELEASE)
+	{
+		pressed[key] = GLFW_RELEASE;
+	}
+	
+	if (pressed[GLFW_KEY_EQUAL]) {
+		musicVolume(5);
+		audio["click_button"]->play();
+	}
+	if (pressed[GLFW_KEY_MINUS]) {
+		musicVolume(-5);
+		audio["click_button"]->play();
+	}
+	if (key == GLFW_KEY_ESCAPE) quit = true;
+
+}
+
 void MouseButton(float x, float y, bool left, bool down) {
-	if (down) {
+	if (down && !game) {
 		//On Menu Page
 		if (playbtn.Hit(x, y)) {
 			playbtn.Down(x, y);
 			menu = false;
 			game = true;
 			options = false;
+			audio["click_button"]->play();
 		}
 		else if (optionsbtn.Hit(x, y)) {
 			optionsbtn.Down(x, y);
 			menu = false;
 			game = false;
 			options = true;
+			audio["click_button"]->play();
 		}
 		else if (quitbtn.Hit(x, y)) {
 			quitbtn.Down(x, y);
 			quit = true;
+			audio["click_button"]->play();
 		}
-		//On Level Complete
 		else if (homebtn.Hit(x, y)) {
 			homebtn.Down(x, y);
 			//go back to menu page
@@ -361,40 +467,16 @@ void MouseButton(float x, float y, bool left, bool down) {
 		//On Option Page
 		else if (increase.Hit(x, y)) {
 			increase.Down(x, y);
+			audio["click_button"]->play();
+			musicVolume(5);
 			//Increase volume
 		}
 		else if (decrease.Hit(x, y)) {
 			decrease.Down(x, y);
+			audio["click_button"]->play();
+			musicVolume(-5);
 			//Decrease volume
 		}
-	}
-}
-
-typedef void(*KeyCallback)(int key, int press, bool shift, bool control);
-KeyCallback kcb = NULL;
-void RegKeyboard(KeyCallback, GLFWwindow*);
-
-void Key(GLFWwindow* w, int key, int scancode, int action, int mods) {
-	kcb(key, action, mods & GLFW_MOD_SHIFT, mods & GLFW_MOD_CONTROL);
-}
-
-void RegKeyboard(KeyCallback cb, GLFWwindow* w) {
-	kcb = cb;
-	glfwSetKeyCallback(w, Key);
-}
-
-void Resize(int width, int height) { glViewport(0, 0, width, height); }
-
-void Keystroke(int key, int press, bool shift, bool control) {
-	if (press == GLFW_PRESS)
-	{
-		//std::cout << "Key pressed: " << key << std::endl;
-		pressed[key] = GLFW_PRESS;
-	}
-	else if (press == GLFW_RELEASE)
-	{
-		//std::cout << "Key released: " << key << std::endl;
-		pressed[key] = GLFW_RELEASE;
 	}
 }
 
@@ -403,6 +485,11 @@ void Keystroke(int key, int press, bool shift, bool control) {
 #pragma region sprites
 
 void Display() {
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glClearColor(.5f, .5f, .5f, 1);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 	background.Display();
 	if (menu) {
 		//display the startGame sprite 
@@ -419,61 +506,37 @@ void Display() {
 		homebtn.Display();
 		return;
 	}
+
 	for (Sprite w : lv->walls) {
+		w.Display();
+	}
+	for (Sprite w : lv->floors) {
 		w.Display();
 	}
 	for (Sprite h : lv->hazards) {
 		h.Display();
 	}
-	door.Display();
-	actor.Display();
-	//if game is finished
-	//std::cout << "finished: " << finished << endl;
-	if (finished)
-	{
-		complete.Display();
-		homebtn.Display();
-		nextbtn.Display();
+	door->Display();
+	actor->Display();
+
+	if (finished) {
+		lv->clearLevel();
+		lv->readLevel("win.txt");
+		lv->loadLevel();
+		finished = false;
+		win = true;
 	}
+	if (win) complete.Display();
+		
 
-
+	glFlush();
 }
-void toggleFullscreen(GLFWwindow* window) {
-	if (pressed[GLFW_KEY_F]) {
-		fullscreen = !fullscreen;
-		GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-		glfwSetWindowMonitor(window, fullscreen ? monitor : NULL, fullscreen ? 0 : winX, fullscreen ? 0 : winY, fullscreen ? mode->width : winWidth, fullscreen ? mode->height : winHeight, GLFW_DONT_CARE);
-	}
-}
-
-//Checks if the sprite postion is within bounds of the game
+// Checks if the sprite postion is within bounds of the game
 bool CheckBound(Sprite s)
 {
 	vec2 sPos = s.GetPosition();
-	// outside x-axis bound?
-	bool collisionX = sPos.x <= -0.94 || sPos.x >= 0.94;
-	// outside y-axis bound?
-	bool collisionY = sPos.y <= -0.8932 || sPos.y >= 0.8932;
-	return collisionX || collisionY;
-}
-
-void basic_movement(vec2& actorPos) {
-
-	//static movement for testing purposes
-	if (pressed[GLFW_KEY_A] && !pressed[GLFW_KEY_D]) {
-		actorPos.x -= 0.01;
-	}
-	if (pressed[GLFW_KEY_D] && !pressed[GLFW_KEY_A]) {
-		actorPos.x += 0.01;
-	}
-	if (pressed[GLFW_KEY_W] && !pressed[GLFW_KEY_S]) {
-		actorPos.y += 0.01;
-	}
-	if (pressed[GLFW_KEY_S] && !pressed[GLFW_KEY_W]) {
-		actorPos.y -= 0.01;
-	}
-
+	bool collisionX = sPos.x <= -0.98 || sPos.x >= 0.98;
+	return collisionX;
 }
 
 void movement() {
@@ -491,59 +554,107 @@ void movement() {
 
 	if (pressed[GLFW_KEY_W] && !pressed[GLFW_KEY_S]) {
 		player.jump(JUMP);
+		if(player.grounded) audio["jump"]->play();
 	}
 }
 
 #pragma endregion
 
 #pragma region gameplay loop
-void Update() {
-	if (pressed[GLFW_KEY_ESCAPE]) quit = true;
 
-	vec2 actorPos = actor.GetPosition();
-	bool wall_hit = false;
+void Update() {
+	vec2 actorPos = actor->GetPosition();
+	bool wall_hit = false, floor_hit = false;
+	
+	// calculate movement
 	player.setPos(actorPos);
 	movement();
 	player.update();
 	actorPos = player.getPos();
 
-	//store new position in temp sprite to test if its a valid move
-	Sprite temp = actor;
+	// store new position in temp sprite to test if its a valid move
+	Sprite temp = *actor;
 	temp.SetPosition(actorPos);
 
-	//Check if actor touches wall
+	// check if actor touches wall
 	for (Sprite i : lv->walls) {
-		//if actor touches any wall sprites
 		if (temp.Intersect(i))
 		{
 			wall_hit = true;
 		}
 	}
-	//Check if actor touches a hazard
-	for (Sprite i : lv->hazards) {
-		//if actor touches any hazard sprites
-		if (actor.Intersect(i))
+	// check if actor touched floor
+	for (Sprite i : lv->floors) {
+		if (temp.Intersect(i))
 		{
-			//Return to starting point
-			lv->restartLevel();
+			floor_hit = true;
 		}
 	}
-
-	//set new position if actor move and hit a wall or out of bound
+	// stop x movement if a wall has been hit
 	if (wall_hit) {
+		player.setVel(vec2(0.0f, player.getVel().y));
+		player.obstructed = true;
+	}
+	else {
+		player.obstructed = false;
+	}
+	// stop y movement if a floor has been hit
+	if (floor_hit) {
 		player.grounded = true;
+		player.setVel(vec2(player.getVel().x, 0.0f));
 	}
 	else {
 		player.grounded = false;
 	}
+	// check if player is in bounds
 	if (!CheckBound(temp)) {
-		actor.SetPosition(actorPos);
+		actor->SetPosition(actorPos);
+	}
+	// kill player if they fall out of bounds
+	if (actorPos.y <= -1) {
+		lv->restartLevel("fall_death");
+		deaths++;
+	}
+	
+	// level end reached
+	if (actor->Intersect(*door)) {
+		std::string file = "level" + std::to_string(++currentLevel) + ".txt";
+		lv->nextLevel(file);
 	}
 
-	//If reach the door/chest
-	if (actor.Intersect(door)) {
-		std::cout << "Finish, now what" << std::endl;
-		finished = true;
+	// check for hazard collisinos
+	int nHitPixels = TestCollisions(spritesCollide);
+	for (Sprite* s : spritesCollide) {
+		bool hit = false;
+		int w = 0;
+		for (int i = 0; i < (int)s->collided.size(); i++)
+			if (s->collided[i] > -1) {
+				hit = true;
+				w = i;
+			}
+		if (hit && s->id != actor->id && w == 0 && actor->position.x != initPos.x && actor->position.y != initPos.y) {
+			lv->restartLevel("death");
+			deaths++;
+		}
+			
+	}
+
+	// change the backgound music
+	if (game && !playMusic) {
+		changeMusic("background.wav");
+		playMusic = true;
+	}
+	else if(!game && !options){ 
+		music.pause();
+		playMusic = false;
+	}
+	if (options && !playMusic) {
+		changeMusic("options.wav");
+		playMusic = true;
+	}
+	else if (!options && !game) {
+		music.pause();
+		playMusic = false;
 	}
 }
 
@@ -551,52 +662,62 @@ void Update() {
 
 int main(int ac, char** av) {
 
+	// init window
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 	GLFWwindow* w = InitGLFW(winX, winY, winWidth, winHeight, "Platformer");
-
+	
+	// set icon
 	GLFWimage icon[1];
 	icon[0].pixels = stbi_load("coin.png", &icon[0].width, &icon[0].height, 0, 4);
 	glfwSetWindowIcon(w, 1, icon);
-	glfwMaximizeWindow(w);
 	stbi_image_free(icon[0].pixels);
+	
+	// maximize window
+	glfwMaximizeWindow(w);
+	
+	// glfw callbacks
+	RegisterMouseButton(MouseButton);
+	RegKeyboard(Keystroke, w);
 
+	// init sprites
 #pragma region init_sprites
+
+	// big sprites
 	background.Initialize("Background.png");
-	//Menu Page
 	title.Initialize("Title.png");
+	complete.Initialize("Complete.png");
+
+	// buttons
 	playbtn.Initialize("Play.png");
 	optionsbtn.Initialize("Options.png");
-	//Game Page
 	quitbtn.Initialize("Quit.png");
 	homebtn.Initialize("Home.png");
 	nextbtn.Initialize("Next.png");
-	complete.Initialize("Complete.png");
-	actor.Initialize("Body.png");
-	door.Initialize("Door.png");
-	//Options Page
+	
+	// options
 	increase.Initialize("Increase.png");
 	decrease.Initialize("Decrease.png");
 	frame.Initialize("Frame.png");
+
 #pragma endregion
-
-	RegisterMouseButton(MouseButton);
-	RegKeyboard(Keystroke, w);
-	printf("Move with W, A, and D. Exit with ESC\n");
-
-	lv = new level("level2.txt");
+	
+	// load sound effects
+	loadsfx(soundFiles, soundNames);
+	
+	// initialize level
+	lv = new level("level0.txt");
 	lv->loadLevel();
-
-	// event loop
+	
+	printf("Move with W, A, and D.\nExit with ESC. Change volume with - and =.\n");
+	
+	// game loop
 	while (!glfwWindowShouldClose(w)) {
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		Display();
-		glFlush();
+		// show the score
+		Text(10, 10, vec3(0,0,0), 20, "Resets: %i", deaths);
 		glfwSwapBuffers(w);
 		glfwPollEvents();
-		toggleFullscreen(w);
 		Update();
-
-		if (pressed[GLFW_KEY_C]) lv->clearLevel();
 		if (quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
 	}
 }
