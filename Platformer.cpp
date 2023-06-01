@@ -169,7 +169,10 @@ nextbtn(vec2(0.15f, -0.3f), vec2(0.1f, 0.1f)),
 actor,
 door,
 background,
-complete(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f));
+complete(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f)),
+increase(vec2(0.2f, 0.1f), vec2(0.08f, 0.08f)),
+decrease(vec2(0.2f, -0.1f), vec2(0.08f, 0.08f)),
+frame(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f));
 
 PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
 
@@ -327,11 +330,13 @@ void MouseButton(float x, float y, bool left, bool down) {
 			playbtn.Down(x, y);
 			menu = false;
 			game = true;
+			options = false;
 		}
 		else if (optionsbtn.Hit(x, y)) {
 			optionsbtn.Down(x, y);
-			//menu = false;
-			//options = true;
+			menu = false;
+			game = false;
+			options = true;
 		}
 		else if (quitbtn.Hit(x, y)) {
 			quitbtn.Down(x, y);
@@ -344,6 +349,7 @@ void MouseButton(float x, float y, bool left, bool down) {
 			menu = true;
 			game = false;
 			finished = false;
+			options = false;
 			lv->restartLevel();
 		}
 		else if (nextbtn.Hit(x, y)) {
@@ -351,6 +357,15 @@ void MouseButton(float x, float y, bool left, bool down) {
 			//load next level
 			finished = false;
 			lv->nextLevel("Level2.txt");
+		}
+		//On Option Page
+		else if (increase.Hit(x, y)) {
+			increase.Down(x, y);
+			//Increase volume
+		}
+		else if (decrease.Hit(x, y)) {
+			decrease.Down(x, y);
+			//Decrease volume
 		}
 	}
 }
@@ -398,7 +413,10 @@ void Display() {
 		return;
 	}
 	else if (options) {
-		//display settings
+		frame.Display();
+		increase.Display();
+		decrease.Display();
+		homebtn.Display();
 		return;
 	}
 	for (Sprite w : lv->walls) {
@@ -410,7 +428,7 @@ void Display() {
 	door.Display();
 	actor.Display();
 	//if game is finished
-	std::cout << "finished: " << finished << endl;
+	//std::cout << "finished: " << finished << endl;
 	if (finished)
 	{
 		complete.Display();
@@ -498,7 +516,6 @@ void Update() {
 		//if actor touches any wall sprites
 		if (temp.Intersect(i))
 		{
-			std::cout << "intersect wall_sprites" << std::endl;
 			wall_hit = true;
 		}
 	}
@@ -507,7 +524,6 @@ void Update() {
 		//if actor touches any hazard sprites
 		if (actor.Intersect(i))
 		{
-			std::cout << "intersect hazard" << std::endl;
 			//Return to starting point
 			lv->restartLevel();
 		}
@@ -545,16 +561,21 @@ int main(int ac, char** av) {
 
 #pragma region init_sprites
 	background.Initialize("Background.png");
+	//Menu Page
 	title.Initialize("Title.png");
 	playbtn.Initialize("Play.png");
 	optionsbtn.Initialize("Options.png");
+	//Game Page
 	quitbtn.Initialize("Quit.png");
 	homebtn.Initialize("Home.png");
 	nextbtn.Initialize("Next.png");
 	complete.Initialize("Complete.png");
 	actor.Initialize("Body.png");
 	door.Initialize("Door.png");
-
+	//Options Page
+	increase.Initialize("Increase.png");
+	decrease.Initialize("Decrease.png");
+	frame.Initialize("Frame.png");
 #pragma endregion
 
 	RegisterMouseButton(MouseButton);
