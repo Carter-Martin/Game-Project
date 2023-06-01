@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <chrono>
 
 #include <glad.h>
 #include <GLFW/glfw3.h>
@@ -30,7 +31,7 @@
 
 #pragma region declarations
 const float VELOCITY_X = 0.3,
-	JUMP = 275,
+	JUMP = 250,
 	GRAVITY = 1.5,
 	FRICTION_X = 0.001,
 	FRICTION_Y = 0.0001,
@@ -163,6 +164,7 @@ public:
 	float getMass() { return mass; }
 
 };
+PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
 
 #pragma region sounds
 
@@ -249,6 +251,7 @@ private:
 	std::vector<levelObject> objs;
 	vec2 playerPos;
 };
+level* lv;
 
 // initialize the given file as a sprite and return it 
 Sprite* level::initSprite(std::string file, vec2 pos, vec2 scale) {
@@ -290,11 +293,13 @@ void level::clearLevel() {
 	spritesCollide.clear();
 	actor->Release();
 	door->Release();
+	player.setVel(vec2(0, 0));
 }
 
 // reset the position of the player
 void level::restartLevel(std::string type = "") {
 	actor->SetPosition(initPos);
+	player.setVel(vec2(0,0));
 	if (type != "") {
 		audio[type]->play();
 	}
@@ -379,13 +384,6 @@ void level::nextLevel(std::string fileName) {
 	if (!readLevel(fileName)) finished = true;
 	loadLevel();
 }
-
-#pragma endregion
-
-#pragma region game variables
-
-PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, false);
-level* lv;
 
 #pragma endregion
 
@@ -661,6 +659,7 @@ void Update() {
 #pragma endregion
 
 int main(int ac, char** av) {
+	static std::chrono::steady_clock::time_point lastTime;
 
 	// init window
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -714,10 +713,21 @@ int main(int ac, char** av) {
 	while (!glfwWindowShouldClose(w)) {
 		Display();
 		// show the score
-		Text(10, 10, vec3(0,0,0), 20, "Resets: %i", deaths);
+		Text(10, 10, vec3(0,0,0), 20, "Level: %i | Total Resets: %i", currentLevel, deaths);
 		glfwSwapBuffers(w);
 		glfwPollEvents();
 		Update();
+
 		if (quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
+
+		std::chrono::steady_clock::time_point currentTime = std::chrono::steady_clock::now();
+		if (currentTime - lastTime >= std::chrono::milliseconds(100))
+		{
+			lastTime = currentTime;
+			if (pressed[GLFW_KEY_N]) {
+				std::string file = "level" + std::to_string(++currentLevel) + ".txt";
+				lv->nextLevel(file);
+			}
+		}
 	}
 }
