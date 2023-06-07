@@ -1,7 +1,8 @@
 /**
 * Group 13
 * DangerDash.cpp
-* Move with W, A, and D. Exit with ESC. Change volume with - and =.
+* Move with W, A, and D. Press R to restart the level. 
+* Exit with ESC. Change volume with - and =.
 * 
 * The goal of the game is to finish all the levels with the least amount
 * of resets.
@@ -44,13 +45,14 @@ const float VELOCITY_X = 0.3,
 
 const vec2 DEFAULT_GRID = vec2(0.14, 0.2492);
 const vec2 DEFAULT_SCALE = vec2(0.07, 0.1246);
+const float CLOUD_SPAWN_X = 1.3;
 
 std::vector<std::string> soundFiles({ "jump.wav", "death.wav", "fall_death.wav", "next_level.wav", "click-button.wav" });
 std::vector<std::string> soundNames({ "jump", "death", "fall_death", "next_level", "click_button" });
 
 bool pressed[GLFW_KEY_LAST] = { 0 }; // track pressed keys
 
-vec2 initPos, endPos, scale = vec2(0.07f, 0.1246f);;
+vec2 initPos, endPos, scale = vec2(0.07f, 0.1246f), spritePos, actorPos, prevPos;
 int deaths = 0, currentLevel = 0, winX = 50, winY = 50, winWidth = 1920, winHeight = 1080;
 bool fullscreen = false, 
 	playMusic = false, 
@@ -59,9 +61,10 @@ bool fullscreen = false,
 	game = false, 
 	quit = false, 
 	finished = false,
-	win = false;
+	win = false,
+	collide = false;
 
-Sprite* actor, * door, background, 
+Sprite* actor, * door, background, newPos, 
 title(vec2(0.0f, 0.5f), vec2(0.7f, 0.7f)),
 playbtn(vec2(0.0f, 0.0f), vec2(0.125f, 0.125f)),
 optionsbtn(vec2(0.0f, -0.25f), vec2(0.15f, 0.15f)),
@@ -73,17 +76,14 @@ increase(vec2(0.2f, 0.1f), vec2(0.08f, 0.08f)),
 decrease(vec2(0.2f, -0.1f), vec2(0.08f, 0.08f)),
 frame(vec2(0.0f, 0.0f), vec2(0.5f, 0.5f));
 
-
 vector<Sprite*> spritesCollide;
 
 sf::Music music;
 
 #pragma endregion
 
-/*
-	PhysicsObject simulates the physics of a 2d rectangle with the 
-	provided parameters.
-*/
+//PhysicsObject simulates the physics of a 2d rectangle with the 
+//provided parameters.
 class PhysicsObject {
 private:
 	vec2 pos;
@@ -168,9 +168,8 @@ PhysicsObject player(FRICTION_X, FRICTION_Y, ACCELERATION_X, DECELERATION_X, 5, 
 
 #pragma region sounds
 
-/*
-	Audio handles playing sound effects through SFML.
-*/
+
+//Audio handles playing sound effects through SFML.
 class Audio {
 
 private:
@@ -224,15 +223,13 @@ void musicVolume(int add) {
 
 #pragma region level
 
-/*
-	level handles all level sprites and objectives
-*/
+//level handles all level sprites and objectives
 class level {
 public:
 	level(std::string levelName) {
 		readLevel(levelName);
 	}
-	std::vector<Sprite> walls, floors, hazards;
+	std::vector<Sprite> platforms, hazards;
 	bool readLevel(std::string);
 	void clearLevel();
 	void loadLevel();
@@ -256,7 +253,7 @@ level* lv;
 // initialize the given file as a sprite and return it 
 Sprite* level::initSprite(std::string file, vec2 pos, vec2 scale) {
 	Sprite* s = new Sprite(pos, scale);
-	s->Initialize(file);
+	s->Initialize(file, 0.5);
 	return s;
 }
 
@@ -278,17 +275,13 @@ bool level::readLevel(std::string fileName) {
 
 // remove all level related sprites
 void level::clearLevel() {
-	for (Sprite s : walls) {
-		s.Release();
-	}
-	for (Sprite s : floors) {
+	for (Sprite s : platforms) {
 		s.Release();
 	}
 	for (Sprite s : hazards) {
 		s.Release();
 	}
-	walls.clear();
-	floors.clear();
+	platforms.clear();
 	hazards.clear();
 	spritesCollide.clear();
 	actor->Release();
@@ -300,6 +293,7 @@ void level::clearLevel() {
 void level::restartLevel(std::string type = "") {
 	actor->SetPosition(initPos);
 	player.setVel(vec2(0,0));
+	deaths++;
 	if (type != "") {
 		audio[type]->play();
 	}
@@ -355,11 +349,8 @@ void level::loadObject(std::vector<Sprite>* spriteType, levelObject obj) {
 // loads all objects from the objs vector into their respective sprite type vectors (walls, floors, hazards)
 void level::loadLevel() {
 	for (auto o : objs) {
-		if (o.type == "wall") {
-			loadObject(&walls, o);
-		}
-		if (o.type == "floor") {
-			loadObject(&floors, o);
+		if (o.type == "wall" || o.type == "floor" || o.type == "platform") {
+			loadObject(&platforms, o);
 		}
 		else if (o.type == "hazard") {
 			loadObject(&hazards, o);
@@ -434,6 +425,7 @@ void MouseButton(float x, float y, bool left, bool down) {
 			game = true;
 			options = false;
 			audio["click_button"]->play();
+
 		}
 		else if (optionsbtn.Hit(x, y)) {
 			optionsbtn.Down(x, y);
@@ -454,13 +446,7 @@ void MouseButton(float x, float y, bool left, bool down) {
 			game = false;
 			finished = false;
 			options = false;
-			lv->restartLevel();
-		}
-		else if (nextbtn.Hit(x, y)) {
-			nextbtn.Down(x, y);
-			//load next level
-			finished = false;
-			lv->nextLevel("Level2.txt");
+			//lv->restartLevel();
 		}
 		//On Option Page
 		else if (increase.Hit(x, y)) {
@@ -478,10 +464,11 @@ void MouseButton(float x, float y, bool left, bool down) {
 	}
 }
 
+
 #pragma endregion
 
-#pragma region sprites
 
+#pragma region gameplay loop
 void Display() {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -505,10 +492,7 @@ void Display() {
 		return;
 	}
 
-	for (Sprite w : lv->walls) {
-		w.Display();
-	}
-	for (Sprite w : lv->floors) {
+	for (Sprite w : lv->platforms) {
 		w.Display();
 	}
 	for (Sprite h : lv->hazards) {
@@ -516,7 +500,6 @@ void Display() {
 	}
 	door->Display();
 	actor->Display();
-
 	if (finished) {
 		lv->clearLevel();
 		lv->readLevel("win.txt");
@@ -525,18 +508,10 @@ void Display() {
 		win = true;
 	}
 	if (win) complete.Display();
-		
 
+	Text(10, 10, vec3(0, 0, 0), 20, "Level: %i | Total Resets: %i", currentLevel, deaths);
 	glFlush();
 }
-// Checks if the sprite postion is within bounds of the game
-bool CheckBound(Sprite s)
-{
-	vec2 sPos = s.GetPosition();
-	bool collisionX = sPos.x <= -0.98 || sPos.x >= 0.98;
-	return collisionX;
-}
-
 void movement() {
 	if ((pressed[GLFW_KEY_A] && !pressed[GLFW_KEY_D]) || (pressed[GLFW_KEY_D] && !pressed[GLFW_KEY_A])) {
 		if (pressed[GLFW_KEY_A] && !pressed[GLFW_KEY_D]) {
@@ -552,76 +527,79 @@ void movement() {
 
 	if (pressed[GLFW_KEY_W] && !pressed[GLFW_KEY_S]) {
 		player.jump(JUMP);
-		if(player.grounded) audio["jump"]->play();
+		if (player.grounded) audio["jump"]->play();
 	}
 }
+// Checks if the sprite postion is within bounds of the game
+bool CheckBound(Sprite s)
+{
+	vec2 sPos = s.GetPosition();
+	bool collisionX = sPos.x <= -0.98 || sPos.x >= 0.98;
+	return collisionX;
+}
 
-#pragma endregion
-
-#pragma region gameplay loop
-
-void Update() {
-	vec2 actorPos = actor->GetPosition();
-	bool wall_hit = false, floor_hit = false;
-	
+void PlayerUpdates() {
+	newPos = *actor;
+	actorPos = actor->GetPosition();
+	prevPos = actorPos;
+	collide = false;
 	// calculate movement
 	player.setPos(actorPos);
 	movement();
 	player.update();
+
 	actorPos = player.getPos();
-
 	// store new position in temp sprite to test if its a valid move
-	Sprite temp = *actor;
-	temp.SetPosition(actorPos);
-
-	// check if actor touches wall
-	for (Sprite i : lv->walls) {
-		if (temp.Intersect(i))
+	newPos.SetPosition(actorPos);
+}
+void PlatformCollision() {
+	// check if actor touches object
+	for (Sprite i : lv->platforms) {
+		if (newPos.Intersect(i))
 		{
-			wall_hit = true;
+			collide = true;
+			spritePos = i.position;
 		}
 	}
-	// check if actor touched floor
-	for (Sprite i : lv->floors) {
-		if (temp.Intersect(i))
-		{
-			floor_hit = true;
+	// stop movement if a platform has been hit
+	if (collide) {
+		int deltaX = (abs(abs(spritePos.x) - abs(player.getPos().x)) * 100 + 0.5), deltaY = (abs(abs(spritePos.y) - abs(player.getPos().y)) * 100 + 0.5);
+		//printf("dx %d dy %d sprite: %f,%f actor: %f, %f\n", deltaX, deltaY/2, spritePos.x, spritePos.y, actor->position.x, actor->position.y);
+		if (deltaX == 10 && !player.grounded) {
+			if (player.getPos().x < spritePos.x || player.getPos().x > spritePos.x) {
+				player.setVel(vec2(0.0f, player.getVel().y));
+				player.setPos(vec2(prevPos.x, player.getPos().y));
+				player.obstructed = true;
+			}
 		}
-	}
-	// stop x movement if a wall has been hit
-	if (wall_hit) {
-		player.setVel(vec2(0.0f, player.getVel().y));
-		player.obstructed = true;
+		else {
+			if (player.getPos().y < spritePos.y) {
+				player.setVel(vec2(player.getVel().x, 0.0f));
+			}
+			else if (player.getPos().y > spritePos.y) {
+				player.setVel(vec2(player.getVel().x, 0.0f));
+				player.grounded = true;
+			}
+		}
 	}
 	else {
 		player.obstructed = false;
-	}
-	// stop y movement if a floor has been hit
-	if (floor_hit) {
-		player.grounded = true;
-		player.setVel(vec2(player.getVel().x, 0.0f));
-	}
-	else {
 		player.grounded = false;
 	}
+}
+void Boundaries() {
 	// check if player is in bounds
-	if (!CheckBound(temp)) {
-		actor->SetPosition(actorPos);
+	if (!CheckBound(newPos)) {
+		actor->SetPosition(player.getPos());
 	}
 	// kill player if they fall out of bounds
 	if (actorPos.y <= -1) {
 		lv->restartLevel("fall_death");
-		deaths++;
 	}
-	
-	// level end reached
-	if (actor->Intersect(*door)) {
-		std::string file = "level" + std::to_string(++currentLevel) + ".txt";
-		lv->nextLevel(file);
-	}
-
+}
+void HazardCollision() {
 	// check for hazard collisinos
-	int nHitPixels = TestCollisions(spritesCollide);
+	TestCollisions(spritesCollide);
 	for (Sprite* s : spritesCollide) {
 		bool hit = false;
 		int w = 0;
@@ -632,17 +610,17 @@ void Update() {
 			}
 		if (hit && s->id != actor->id && w == 0 && actor->position.x != initPos.x && actor->position.y != initPos.y) {
 			lv->restartLevel("death");
-			deaths++;
 		}
-			
-	}
 
+	}
+}
+void Music() {
 	// change the backgound music
 	if (game && !playMusic) {
 		changeMusic("background.wav");
 		playMusic = true;
 	}
-	else if(!game && !options){ 
+	else if (!game && !options) {
 		music.pause();
 		playMusic = false;
 	}
@@ -654,6 +632,19 @@ void Update() {
 		music.pause();
 		playMusic = false;
 	}
+}
+void Update() {
+	PlayerUpdates();
+	PlatformCollision();
+	Boundaries();
+	HazardCollision();
+	Music();
+	// level end reached
+	if (actor->Intersect(*door)) {
+		std::string file = "level" + std::to_string(++currentLevel) + ".txt";
+		lv->nextLevel(file);
+	}
+
 }
 
 #pragma endregion
@@ -707,16 +698,15 @@ int main(int ac, char** av) {
 	lv = new level("level0.txt");
 	lv->loadLevel();
 	
-	printf("Move with W, A, and D.\nExit with ESC. Change volume with - and =.\n");
+	printf("Move with W, A, and D.\nRestart Level with R. Exit with ESC. Change volume with - and =.\n");
 	
 	// game loop
 	while (!glfwWindowShouldClose(w)) {
 		Display();
 		// show the score
-		Text(10, 10, vec3(0,0,0), 20, "Level: %i | Total Resets: %i", currentLevel, deaths);
 		glfwSwapBuffers(w);
 		glfwPollEvents();
-		Update();
+		if(game) Update();
 
 		if (quit) glfwSetWindowShouldClose(w, GLFW_TRUE);
 
@@ -728,6 +718,11 @@ int main(int ac, char** av) {
 				std::string file = "level" + std::to_string(++currentLevel) + ".txt";
 				lv->nextLevel(file);
 			}
+			if (pressed[GLFW_KEY_R]) {
+				lv->restartLevel();
+			}
 		}
+
 	}
+
 }
